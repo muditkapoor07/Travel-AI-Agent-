@@ -2,6 +2,11 @@
 
 > A fully autonomous, agentic travel planning system that creates complete, executable travel plans without asking follow-up questions.
 
+[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.32+-red.svg)](https://streamlit.io)
+[![Groq](https://img.shields.io/badge/LLM-Groq%20Llama%203.3-orange.svg)](https://groq.com)
+[![Neon](https://img.shields.io/badge/Database-Neon%20PostgreSQL-green.svg)](https://neon.tech)
+
 ---
 
 ## 1. Project Overview
@@ -16,19 +21,18 @@ This agent replaces that entire process with a single natural language input.
 
 ### Why It Is Different from Normal AI Chatbots
 
-Most AI systems (including GPT-based chatbots) respond to one question at a time, require the user to guide the conversation, and produce generic answers. This agent operates differently:
-
 | Dimension | Normal AI Chatbot | This Agent |
 |---|---|---|
 | Input | One question at a time | One vague goal |
 | Behavior | Responds, waits | Plans autonomously end-to-end |
 | Follow-up questions | Many | Zero |
 | Output | Text answer | Structured, executable plan |
-| Tool usage | Optional / limited | Core to every plan |
+| Tool usage | Optional / limited | Core to every plan — LLM decides |
 | Decision-making | User-driven | Agent-driven |
-| Weather awareness | None | Built-in, automatic |
+| Weather awareness | None | Live per-city forecasts |
 | Budget optimization | None | Automatic |
 | Route logic | None | Geography-aware |
+| Memory | None | Persistent across sessions (PostgreSQL) |
 
 ---
 
@@ -43,72 +47,62 @@ The agent never asks clarifying questions. If information is missing, it makes r
 ### Assumption-Based Decision Making
 Every plan begins with an explicit Assumptions section where the agent states what it inferred from the input. This makes the reasoning transparent and correctable, while keeping the execution fully autonomous.
 
-### Multi-Step Planning and Self-Correction
-The agent does not produce a single-pass answer. It:
-1. Fetches real-time data (weather, etc.)
-2. Reasons about routes and feasibility
-3. Builds a structured plan
-4. Cross-checks against budget and time constraints
-5. Adjusts and optimizes before producing output
+### Multi-Step Planning with True Agentic Tool Loop
+The LLM autonomously decides which tools to call, in what order, and how many times — this is not a hardcoded pipeline. The agent:
+1. Recalls saved user preferences from persistent database
+2. Decides which cities need weather data and fetches them
+3. Calls flight and hotel search for each leg
+4. Detects new user preferences and saves them automatically
+5. Synthesizes all tool results into a final structured plan
 
-### Tool-Based Execution Loop
-The agent uses external tools as part of its reasoning process — not as optional lookups, but as required inputs to every plan. Weather data, route logic, and budget calculations are all grounded in tool outputs before the final plan is written.
+### Persistent Memory
+The agent remembers user preferences across sessions using Neon PostgreSQL. Every time you plan a trip, it recalls your home city, travel style, budget level, dietary needs, and past preferences — without being asked.
 
 ---
 
 ## 3. Core Capabilities
 
 ### Weather-Aware Planning
-The agent automatically fetches live 5-day forecasts for every destination in the itinerary. It accounts for monsoon seasons, extreme heat, typhoon risks, and air quality when recommending travel windows. It will reroute or flag risks without being asked.
+Live 5-day forecasts fetched for every destination via OpenWeatherMap API. The agent accounts for monsoon seasons, extreme heat, typhoon risks, and air quality. It will reroute or flag risks without being asked.
 
 ### Route and Map Optimization
 Routes are optimized using real-world geography — not alphabetical order or tourist popularity. The agent minimizes backtracking, accounts for travel time between cities, and chooses the correct direction of travel (e.g. Jaipur → Jodhpur → Jaisalmer, not the reverse).
 
 ### Booking-Aware Recommendations
-The agent thinks in terms of bookable components: specific flight legs, train numbers, hotel areas (not just city names), and activity categories. Every recommendation is framed in terms of what the traveler would actually search for when booking.
+Every recommendation is framed in terms of bookable components: specific flight legs, train routes, hotel areas (not just city names), and activity categories.
 
 ### Budget Estimation and Optimization
 Every plan includes an itemized budget table covering transport, accommodation, food, and activities. The agent estimates per-person and total costs, flags where costs can be reduced, and adjusts recommendations when a budget constraint is specified.
 
 ### Local, On-Ground Travel Logic
-The agent incorporates ground realities that generic itinerary tools miss: last-mile connectivity, permit requirements (e.g. Inner Line Permits for Arunachal Pradesh), local festival dates that affect prices and availability, scam-prone areas, cultural norms, and safe vs. risky neighborhoods for stays.
+The agent incorporates ground realities that generic tools miss: last-mile connectivity, permit requirements (e.g. Inner Line Permits for Arunachal Pradesh), local festival dates that affect prices and availability, scam-prone areas, cultural norms, and safe vs. risky neighborhoods.
 
-### Risk Avoidance
-The agent proactively avoids problematic scenarios — monsoon-flooded routes, typhoon-season beach destinations, extreme summer heat in the Thar Desert — without the user needing to specify these constraints.
+### Visa & Entry Requirements
+Every plan includes a dedicated Visa & Entry section with visa type, cost, application method, processing time, and validity — automatically determined per destination.
+
+### Persistent User Memory
+The agent saves and recalls user preferences using Neon PostgreSQL. Memory persists across sessions, devices, and Render redeploys. The agent gets more personalized with every interaction.
 
 ---
 
 ## 4. Tools Used
 
-The agent uses **5 tools** that it calls autonomously based on the planning context. It decides which tools to use, when to use them, and in what order — without any hardcoded pipeline.
+The agent uses **5 tools** called autonomously by the LLM based on the planning context. It decides which tools to use, when, and how many times.
 
 ### `recall_preferences` — User Memory Recall
-**What:** Reads saved user preferences from persistent local storage.
-**Why:** Called at the start of every plan. If the user has previously mentioned their home city, budget style, dietary needs, or travel interests, the agent retrieves this and uses it to personalize the plan without asking again.
+Reads all saved user preferences from Neon PostgreSQL at the start of every plan. If the user has previously mentioned home city, budget style, dietary needs, or travel interests, the agent retrieves and applies this without asking again.
 
 ### `remember_preference` — User Memory Write
-**What:** Saves a user preference (key-value) to persistent storage.
-**Why:** Called automatically when the agent detects new information about the user — travel style, budget level, home city, group composition, interests. Builds a profile over time, making every subsequent plan more accurate.
+Called automatically when the agent detects new information about the user — travel style, budget level, home city, group size, dietary needs, interests. Saves to PostgreSQL using UPSERT. Builds a persistent profile over time.
 
 ### `get_weather` — Live Weather Forecasts
-**What:** Fetches real-time 5-day forecasts via OpenWeatherMap API.
-**Why:** Travel planning is fundamentally seasonal. The agent calls this for every city in the itinerary — not as an optional lookup but as a required input. Forecast data directly shapes accommodation recommendations, activity timing, and risk flags.
+Fetches real-time 5-day forecasts via OpenWeatherMap API for every city in the itinerary. Forecast data directly shapes accommodation recommendations, activity timing, and seasonal risk flags.
 
 ### `search_flights` — Flight Route Intelligence
-**What:** Returns route information and fare estimates for a city pair.
-**Why:** Every flight leg in the itinerary is explicitly reasoned about. The agent calls this per leg to surface airline options, duration, and realistic INR price ranges — grounding the transport plan in bookable reality.
+Returns route information and realistic fare estimates for a city pair. Called for every flight leg in the itinerary to surface airline options, duration, and INR price ranges.
 
 ### `search_hotels` — Hotel Area Recommendations
-**What:** Returns stay area recommendations and price ranges per city.
-**Why:** Called for every city in the itinerary matched to the user's budget level. The agent recommends neighborhoods, not just hotel names — which is more durable and actionable for actual booking.
-
-### Budget Calculation Logic
-**What:** Structured cost estimation across transport, accommodation, food, and activities — built into the LLM's reasoning, not a separate API.
-**Why:** Budget is the most common constraint users have. The agent builds itemized markdown tables showing per-category and total costs, and adjusts recommendations when a budget constraint is specified.
-
-### Geography and Route Reasoning
-**What:** Built-in spatial reasoning about distances, transport options, and route sequencing — part of the LLM's knowledge.
-**Why:** India and Asia have complex, non-obvious transport networks. The agent knows that Varanasi is best reached by train from Delhi, that Meghalaya requires a connection through Guwahati, and that Bangkok to Chiang Mai has flight and overnight train options at different price points.
+Returns stay area recommendations and price ranges per city, matched to the user's budget level. Recommends neighborhoods rather than just hotel names — more durable and actionable for booking.
 
 ---
 
@@ -119,113 +113,102 @@ User Input: "10 days Rajasthan, December, ₹60k for 2"
     │
     ▼
 Step 1: LLM receives goal + system prompt
-    → Autonomously decides to call recall_preferences first
-    → Retrieves: home_city=Delhi, travel_style=mid-range (if previously saved)
+    → Autonomously calls recall_preferences
+    → Retrieves saved: home_city=Delhi, travel_style=mid-range
 
     │
     ▼
-Step 2: LLM decides route (Jaipur→Pushkar→Jodhpur→Jaisalmer→Udaipur)
-    → Autonomously calls get_weather for each city
-    → Receives live 5-day forecasts
-    → December confirmed: 8-20°C, clear skies, ideal season
+Step 2: LLM plans route (Jaipur→Pushkar→Jodhpur→Jaisalmer→Udaipur)
+    → Calls get_weather for each city (5 tool calls)
+    → December confirmed: 8–20°C, clear skies, ideal
 
     │
     ▼
-Step 3: LLM calls search_flights for each flight leg
+Step 3: LLM calls search_flights for each leg
     → DEL→JAI, UDR→DEL
     → Receives route info and fare estimates
 
     │
     ▼
 Step 4: LLM calls search_hotels for each city
-    → Matches to mid-range budget level
-    → Receives area recommendations and nightly price ranges
+    → Matched to mid-range budget
+    → Receives area recommendations + nightly price ranges
 
     │
     ▼
-Step 5: LLM detects "mid-range" preference → calls remember_preference
-    → Saves: budget_level=mid-range for future trips
+Step 5: LLM detects "₹60k budget" preference
+    → Calls remember_preference(budget_level, mid-range)
+    → Saved to Neon PostgreSQL for future trips
 
     │
     ▼
-Step 6: LLM has all data — produces structured plan
-    → Assembles 9-section output grounded in tool results
-    → Budget table using actual hotel/transport estimates
+Step 6: LLM synthesizes all tool results → produces plan
+    → 9-section structured output
+    → Budget table using actual estimates
     → Weather section using live forecast data
-    → Visa section (e-Tourist Visa if international)
+    → Visa section auto-included
 
-    │
-    ▼
-Output: Complete, executable travel plan
-    Sections: Assumptions · Itinerary · Transport · Hotels ·
-              Budget · Weather · Visa & Entry · Practical Tips
-    Footer: Tools used listed with call details
+Output: Complete executable plan
+Sections: Assumptions · Itinerary · Transport · Hotels ·
+          Budget · Weather · Visa & Entry · Practical Tips
+Footer:   All tools used listed with call details
 ```
 
 ---
 
 ## 6. Example Use Cases
 
-### "Plan a 7-day Vietnam trip, mid-range budget"
-The agent selects Hanoi → Hoi An → Ho Chi Minh City, optimizes the route to avoid backtracking, recommends the correct flight legs, provides live weather for each city, estimates costs at the mid-range level, and includes Vietnam e-visa instructions.
+### "10 days Rajasthan, December, ₹60k for 2"
+Jaipur → Pushkar → Jodhpur → Jaisalmer → Udaipur. One-directional route, sleeper trains, mid-range havelis, live weather confirmation, itemized budget within ₹60k.
 
-### "Optimize budget travel across Rajasthan, ₹40k for 2, December"
-The agent selects Jaipur → Pushkar → Jodhpur → Jaisalmer → Udaipur (one-directional route), recommends sleeper trains over flights to stay within budget, identifies budget guesthouse areas in each city, and produces a day-by-day plan within the stated constraint.
+### "Solo Vietnam + Cambodia, 2 weeks, mid-range"
+Hanoi → Hoi An → Ho Chi Minh City → Siem Reap → Phnom Penh. Optimized route, Vietnam e-visa + Cambodia e-visa instructions, live weather per city, mid-range hotel areas.
 
-### "Avoid monsoon while planning Southeast Asia, 2 weeks"
-The agent checks current month against monsoon calendars for Thailand, Vietnam, Cambodia, and Indonesia. It routes the trip to avoid wet-season destinations and suggests the correct sub-regions (e.g. east coast Vietnam vs. west coast during different months).
+### "Kerala family trip, April, 4 people"
+Kochi → Munnar → Alleppey → Kovalam. April heat flag noted, houseboat recommendation, family-appropriate stays, budget table for 4.
 
-### "Northeast India — Meghalaya + Arunachal, adventure, 10 days"
-The agent flags the Inner Line Permit requirement for Arunachal Pradesh, recommends the Guwahati gateway, sequences the route correctly (Shillong → Cherrapunji → Tawang), and notes road condition realities for the remote mountain routes.
+### "Japan cherry blossom, first timer, 12 days"
+Tokyo → Nikko → Kyoto → Osaka → Hiroshima. Bloom window timing, JR Pass recommendation, live weather forecasts, visa-free entry for most nationalities confirmed.
+
+### "Northeast India — Meghalaya + Arunachal, 10 days"
+Inner Line Permit flagged automatically, Guwahati gateway, Shillong → Cherrapunji → Tawang, road condition realities included.
 
 ### "Bali honeymoon, 8 days, luxury"
-The agent recommends Ubud (culture, rice terraces) → Seminyak (beach, nightlife) → Nusa Dua (luxury resorts), matches accommodation to luxury tier, includes villa options, and provides current weather and Bali entry requirements.
+Ubud → Seminyak → Nusa Dua. Private villa recommendations, luxury tier matching, live weather, Bali entry requirements.
 
 ---
 
 ## 7. What the User Can Do
 
-### Inputs
-Users provide a natural language description of their trip. Useful elements to include:
+### Inputs — what to include
 - Destination or region
-- Duration or travel dates
+- Duration or travel dates / season
 - Budget (total or per day, per person)
 - Group composition (solo, couple, family, group size)
 - Travel style (budget, mid-range, luxury, adventure)
-- Any hard constraints (must-visit places, avoid certain regions)
+- Any hard constraints (must-visit places, avoid certain areas)
 
 Everything else is handled by the agent.
 
-### Outputs
-Every response includes:
-- **Assumptions** — what the agent inferred from the input
+### Outputs — what you receive
+- **Assumptions** — what the agent inferred
 - **Day-by-day Itinerary** — specific activities per day, per city
-- **Transport Plan** — flights, trains, buses with specific route recommendations
+- **Transport Plan** — flights, trains, buses with route recommendations
 - **Stay Areas & Hotels** — recommended neighborhoods and hotel tiers
 - **Budget Estimate** — itemized table with per-category and total costs
 - **Weather Summary** — live forecast data for each destination
 - **Visa & Entry Requirements** — type, cost, application process, duration
 - **Practical Tips** — safety, scams, cultural norms, packing
 
-### What the Agent Handles Automatically
-- City sequencing and route direction
-- Transport mode selection
-- Weather risk assessment
-- Budget constraint management
-- Permit and visa identification
-- Festival and peak season awareness
-- Local ground realities
-
 ---
 
 ## 8. Non-Goals — What This Agent Does NOT Do
 
-- **No conversational small talk** — the agent does not engage in general chat
-- **No repeated clarification questions** — missing information is inferred, not requested
-- **No generic advice** — every plan is specific to the stated destination and constraints
-- **No real-time booking** — the agent recommends bookable components but does not execute bookings
-- **No opinion-based travel blogging** — outputs are structured and decision-focused, not narrative
-- **No single-destination Q&A** — the agent is designed for multi-city, multi-constraint planning tasks
+- No conversational small talk
+- No repeated clarification questions
+- No generic travel-blog advice
+- No real-time booking execution
+- No single-destination Q&A
 
 ---
 
@@ -234,49 +217,34 @@ Every response includes:
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                     User Interface                       │
-│              Streamlit Web App (app.py)                  │
-└────────────────────────┬────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────┐
-│                    LLM Reasoning Engine                  │
-│         Groq API — Llama 3.3 70B Versatile              │
-│                                                          │
-│  System Prompt: Autonomous travel agent persona,         │
-│  decision rules, output format, formatting constraints   │
+│         Streamlit Web App — Dark theme, animated UI      │
 └────────────────────────┬────────────────────────────────┘
                          │
                          ▼
 ┌─────────────────────────────────────────────────────────┐
 │              TRUE Agentic Tool Loop                      │
-│   LLM autonomously decides which tools to call           │
 │                                                          │
-│   recall_preferences → get_weather (per city)            │
-│   → search_flights (per leg) → search_hotels (per city) │
-│   → remember_preference (if new info detected)           │
+│  LLM (Groq · Llama 3.3 70B) autonomously decides:       │
 │                                                          │
-│   Loop repeats until LLM signals completion              │
+│  1. recall_preferences  → Neon PostgreSQL               │
+│  2. get_weather         → OpenWeatherMap API            │
+│  3. search_flights      → Knowledge-based estimates     │
+│  4. search_hotels       → Knowledge-based estimates     │
+│  5. remember_preference → Neon PostgreSQL               │
+│                                                          │
+│  Loop continues until LLM signals completion             │
 └────────────────────────┬────────────────────────────────┘
                          │
                          ▼
 ┌─────────────────────────────────────────────────────────┐
-│                  Structured Output                       │
-│   9-section markdown plan rendered in Streamlit chat     │
+│              Structured 9-Section Output                 │
+│      Rendered as markdown in Streamlit chat              │
 └─────────────────────────────────────────────────────────┘
 
-External APIs & Storage:
-  OpenWeatherMap  ──► Live 5-day forecasts per city
-  Groq API        ──► LLM inference (low latency)
-  user_memory.json ─► Persistent user preferences (local)
+Persistent Storage:
+  Neon PostgreSQL ──► user_preferences table
+                      Survives redeploys, restarts, scaling
 ```
-
-**Key design decisions:**
-- The LLM **autonomously decides** which tools to call, in what order, and how many times — this is a true agentic loop, not a hardcoded pipeline
-- `recall_preferences` is called at the start of every plan — the agent personalizes every response based on what it has learned about the user
-- `remember_preference` is called automatically when the user mentions travel style, budget level, home city, dietary needs, or group size
-- Memory persists across sessions in `user_memory.json` — the agent gets smarter with each interaction
-- All API calls use `verify=False` to handle corporate SSL proxy environments
-- Retry logic with `retry-after` header handling manages Groq rate limits automatically
 
 ---
 
@@ -284,20 +252,17 @@ External APIs & Storage:
 
 | Characteristic | Chatbot | This Agent |
 |---|---|---|
-| **Interaction model** | Turn-by-turn Q&A | Single input → complete plan |
-| **Decision ownership** | User decides everything | Agent decides, user reviews |
-| **Follow-up questions** | Frequent | Zero by design |
-| **Tool usage** | Rare or cosmetic | Core to every plan |
-| **Output structure** | Freeform text | Fixed, actionable sections |
-| **Route optimization** | Never | Always |
-| **Budget enforcement** | Never | Automatic |
-| **Weather integration** | Never | Live data per city |
-| **Assumption handling** | Asks user | States assumptions, proceeds |
-| **Visa/permit logic** | Generic if asked | Automatic per destination |
-| **Ground-level logic** | Tourist-blog level | Operational detail |
-| **Failure mode** | Asks more questions | Infers and flags uncertainty |
-
-A chatbot is a reactive system. This agent is a proactive planning system that takes ownership of a complex, multi-variable problem and delivers a complete, optimized output.
+| Interaction model | Turn-by-turn Q&A | Single input → complete plan |
+| Decision ownership | User decides | Agent decides, user reviews |
+| Follow-up questions | Frequent | Zero by design |
+| Tool usage | Rare | Core — LLM drives tool selection |
+| Output structure | Freeform text | Fixed, actionable 9 sections |
+| Route optimization | Never | Always, geography-aware |
+| Budget enforcement | Never | Automatic |
+| Weather integration | Never | Live data per city |
+| Memory | Session only | Persistent PostgreSQL |
+| Visa/permit logic | Generic if asked | Automatic per destination |
+| Assumption handling | Asks user | States assumptions, proceeds |
 
 ---
 
@@ -307,15 +272,15 @@ A chatbot is a reactive system. This agent is a proactive planning system that t
 |---|---|
 | Frontend | Streamlit |
 | LLM | Llama 3.3 70B via Groq API |
-| Agent Loop | Groq native function calling — LLM drives tool selection |
-| Weather | OpenWeatherMap API (live 5-day forecasts) |
-| Memory | JSON file — persistent user preference store |
+| Agent Loop | Groq native function calling |
+| Weather | OpenWeatherMap API |
+| Memory | Neon PostgreSQL (persistent, serverless) |
 | Language | Python 3.11+ |
 | Deployment | Render (Web Service) |
 
 ---
 
-## Agent Capabilities — Updated Status
+## Agent Capabilities
 
 | Capability | Status |
 |---|---|
@@ -325,7 +290,7 @@ A chatbot is a reactive system. This agent is a proactive planning system that t
 | Live weather per city | ✅ |
 | LLM-directed tool selection | ✅ |
 | Dynamic multi-turn tool loop | ✅ |
-| Persistent user memory across sessions | ✅ |
+| Persistent memory across sessions | ✅ PostgreSQL |
 | Real flight/hotel data | 🟡 Knowledge-based estimates |
 
 ---
@@ -334,8 +299,10 @@ A chatbot is a reactive system. This agent is a proactive planning system that t
 
 | Variable | Required | Description |
 |---|---|---|
-| `GROQ_API_KEY` | Yes | Groq API key from console.groq.com |
-| `OPENWEATHER_API_KEY` | Recommended | OpenWeatherMap key from openweathermap.org |
+| `GROQ_API_KEY` | Yes | From console.groq.com |
+| `OPENWEATHER_API_KEY` | Yes | From openweathermap.org |
+| `DATABASE_URL` | Yes | Neon PostgreSQL connection string |
+| `PYTHON_VERSION` | Render only | Set to `3.11.0` |
 
 ---
 
@@ -345,7 +312,12 @@ A chatbot is a reactive system. This agent is a proactive planning system that t
 git clone https://github.com/muditkapoor07/Travel-AI-Agent-.git
 cd Travel-AI-Agent-
 pip install -r requirements.txt
-# Add your keys to .env
+
+# Create .env file with your keys
+# GROQ_API_KEY=...
+# OPENWEATHER_API_KEY=...
+# DATABASE_URL=postgresql://...
+
 streamlit run app.py
 ```
 
@@ -354,10 +326,15 @@ streamlit run app.py
 ## Deploying to Render
 
 1. Push to GitHub
-2. Connect repo at render.com → New Web Service
-3. Add environment variables: `GROQ_API_KEY`, `OPENWEATHER_API_KEY`
-4. Deploy — `render.yaml` handles the rest
+2. Go to **render.com** → New → Web Service
+3. Connect `muditkapoor07/Travel-AI-Agent-` repo
+4. Settings:
+   - **Build Command:** `pip install -r requirements.txt`
+   - **Start Command:** `streamlit run app.py --server.port $PORT --server.headless true --server.enableCORS false`
+   - **Region:** Singapore
+5. Add environment variables: `GROQ_API_KEY`, `OPENWEATHER_API_KEY`, `DATABASE_URL`, `PYTHON_VERSION`
+6. Deploy — `render.yaml` handles the rest
 
 ---
 
-*Built with Groq · Llama 3.3 · OpenWeatherMap · Streamlit*
+*Built with Groq · Llama 3.3 · OpenWeatherMap · Neon PostgreSQL · Streamlit*
