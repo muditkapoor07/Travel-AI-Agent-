@@ -464,9 +464,10 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 def _get_db():
-    return psycopg2.connect(
-        os.getenv("DATABASE_URL", "postgresql://neondb_owner:npg_k1TlFyVsHz5o@ep-raspy-credit-anqhzo5x.c-6.us-east-1.aws.neon.tech/neondb?sslmode=require")
-    )
+    url = os.getenv("DATABASE_URL")
+    if not url:
+        raise ValueError("DATABASE_URL environment variable not set")
+    return psycopg2.connect(url)
 
 def _init_db():
     """Create preferences table if it doesn't exist."""
