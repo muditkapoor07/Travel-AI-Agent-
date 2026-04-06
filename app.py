@@ -402,6 +402,8 @@ TOOL_ICONS = {
     "get_weather": "🌤️",
     "search_flights": "✈️",
     "search_hotels": "🏨",
+    "remember_preference": "🧠",
+    "recall_preferences": "🧠",
 }
 
 # ── Tool implementations ───────────────────────────────────────────────────────
@@ -440,7 +442,6 @@ def get_weather(city: str, days: int = 5) -> dict:
 
 
 def search_flights(origin: str, destination: str, travel_class: str = "economy") -> dict:
-    # Knowledge-based estimates — returns structured data for the LLM to use
     return {
         "origin": origin,
         "destination": destination,
@@ -450,7 +451,6 @@ def search_flights(origin: str, destination: str, travel_class: str = "economy")
 
 
 def search_hotels(city: str, budget_level: str = "mid-range", nights: int = 2) -> dict:
-    # Knowledge-based estimates
     return {
         "city": city,
         "budget_level": budget_level,
@@ -459,15 +459,123 @@ def search_hotels(city: str, budget_level: str = "mid-range", nights: int = 2) -
     }
 
 
+# ── Memory tools ──────────────────────────────────────────────────────────────
+MEMORY_FILE = os.path.join(os.path.dirname(__file__), "user_memory.json")
+
+def _load_memory() -> dict:
+    if os.path.exists(MEMORY_FILE):
+        try:
+            with open(MEMORY_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"preferences": {}, "history": []}
+
+def _save_memory(data: dict):
+    with open(MEMORY_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+def remember_preference(key: str, value: str) -> dict:
+    """Save a user preference or fact for future trips.
+    Args:
+        key: Category e.g. 'travel_style', 'budget_level', 'home_city', 'dietary', 'interests'
+        value: The value e.g. 'mid-range', 'Delhi', 'vegetarian', 'adventure travel'
+    """
+    mem = _load_memory()
+    mem["preferences"][key] = value
+    _save_memory(mem)
+    return {"saved": True, "key": key, "value": value}
+
+def recall_preferences() -> dict:
+    """Recall all saved user preferences to personalize the travel plan."""
+    mem = _load_memory()
+    return {"preferences": mem["preferences"]} if mem["preferences"] else {"preferences": {}, "note": "No preferences saved yet"}
+
 TOOL_MAP = {
     "get_weather": get_weather,
     "search_flights": search_flights,
     "search_hotels": search_hotels,
+    "remember_preference": remember_preference,
+    "recall_preferences": recall_preferences,
 }
 
+# ── Updated tool schemas ───────────────────────────────────────────────────────
+TOOL_SCHEMAS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "Get live 5-day weather forecast for a city. Call this for EVERY city in the itinerary.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "city": {"type": "string", "description": "City name e.g. 'Mumbai', 'Bangkok', 'Jaipur'"},
+                    "days": {"type": "integer", "description": "Forecast days 1-7, default 5"},
+                },
+                "required": ["city"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_flights",
+            "description": "Get flight route information and typical fare estimates between two cities.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "origin": {"type": "string", "description": "Origin city or airport code"},
+                    "destination": {"type": "string", "description": "Destination city or airport code"},
+                    "travel_class": {"type": "string", "enum": ["economy", "business"], "description": "Travel class"},
+                },
+                "required": ["origin", "destination"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_hotels",
+            "description": "Get hotel area recommendations and typical price ranges for a city.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "city": {"type": "string", "description": "City name e.g. 'Jaipur', 'Bangkok'"},
+                    "budget_level": {"type": "string", "enum": ["budget", "mid-range", "luxury"]},
+                    "nights": {"type": "integer", "description": "Number of nights"},
+                },
+                "required": ["city"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "remember_preference",
+            "description": "Save a user preference for future trips. Call this when user mentions travel style, budget, home city, dietary needs, or interests.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string", "description": "Preference category: travel_style, budget_level, home_city, dietary, interests, group_size"},
+                    "value": {"type": "string", "description": "The value to save"},
+                },
+                "required": ["key", "value"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "recall_preferences",
+            "description": "Recall all saved user preferences to personalize the plan. Call this at the START of every planning request.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+]
 
-# ── Groq API call (via requests to bypass corporate SSL) ──────────────────────
-def call_groq(messages: list) -> dict:
+
+# ── Groq API call ──────────────────────────────────────────────────────────────
+def call_groq(messages: list, tools: list = None) -> dict:
     import urllib3, time
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -479,6 +587,9 @@ def call_groq(messages: list) -> dict:
         "temperature": 0.4,
         "max_tokens": 4096,
     }
+    if tools:
+        payload["tools"] = tools
+        payload["tool_choice"] = "auto"
 
     for attempt in range(4):
         resp = requests.post(GROQ_URL, headers=headers, json=payload, verify=False, timeout=60)
@@ -493,73 +604,59 @@ def call_groq(messages: list) -> dict:
     return resp.json()
 
 
-def extract_cities(user_message: str) -> list:
-    """Quick heuristic to pull city names from the request for weather prefetch."""
-    import re
-    # Common India/Asia cities to detect
-    known = [
-        "Mumbai","Delhi","Jaipur","Udaipur","Jodhpur","Jaisalmer","Agra","Varanasi",
-        "Goa","Kochi","Munnar","Alleppey","Chennai","Bangalore","Hyderabad","Kolkata",
-        "Amritsar","Manali","Shimla","Leh","Rishikesh","Darjeeling","Gangtok",
-        "Shillong","Cherrapunji","Kaziranga","Dibrugarh","Aizawl","Imphal",
-        "Bangkok","Chiang Mai","Phuket","Pattaya","Koh Samui",
-        "Singapore","Kuala Lumpur","Penang","Langkawi",
-        "Bali","Jakarta","Yogyakarta","Lombok",
-        "Tokyo","Osaka","Kyoto","Hiroshima","Seoul","Busan","Taipei",
-        "Hanoi","Ho Chi Minh City","Hoi An","Da Nang",
-        "Siem Reap","Phnom Penh","Yangon","Kathmandu","Pokhara","Colombo","Kandy",
-        "Tashkent","Samarkand","Bukhara","Dubai","Doha",
-    ]
-    found = []
-    msg_lower = user_message.lower()
-    for city in known:
-        if city.lower() in msg_lower and city not in found:
-            found.append(city)
-    return found[:5]  # cap at 5 cities
-
-
-# ── Agentic loop ──────────────────────────────────────────────────────────────
+# ── TRUE Agentic loop — LLM decides which tools to call ──────────────────────
 def run_agent(user_message: str, history: list, status_placeholder) -> str:
     import time
 
-    # Step 1: Pre-fetch weather for detected cities
-    cities = extract_cities(user_message)
-    weather_context = ""
-    tools_used = []
-
-    if cities:
-        weather_data = []
-        for city in cities:
-            status_placeholder.info(f"🌤️ Fetching live weather for **{city}**...")
-            result = get_weather(city, days=5)
-            if "forecast" in result:
-                weather_data.append(f"**{city}**: " + ", ".join(
-                    f"{d['date']}: {d['temp_min_c']}–{d['temp_max_c']}°C, {d['condition']}, humidity {d['humidity_pct']}%"
-                    for d in result["forecast"]
-                ))
-                tools_used.append(f"🌤️ weather ({city})")
-            time.sleep(0.3)
-
-        if weather_data:
-            weather_context = "\n\n**LIVE WEATHER DATA (use this in your Weather Summary section):**\n" + "\n".join(weather_data)
-
-    # Step 2: Build messages with weather injected
-    status_placeholder.info("🤔 Building your travel plan...")
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     for msg in history:
         messages.append({"role": msg["role"], "content": msg["content"]})
+    messages.append({"role": "user", "content": user_message})
 
-    enriched_message = user_message + weather_context
-    messages.append({"role": "user", "content": enriched_message})
+    tools_used = []
+    status_placeholder.info("🤔 Thinking...")
 
-    # Step 3: Call Groq
-    response = call_groq(messages)
+    for iteration in range(12):  # max 12 tool calls per request
+        response = call_groq(messages, tools=TOOL_SCHEMAS)
+        msg = response["choices"][0]["message"]
+        messages.append(msg)
+
+        tool_calls = msg.get("tool_calls") or []
+        if not tool_calls:
+            break  # LLM is done calling tools — produce final answer
+
+        for tc in tool_calls:
+            name = tc["function"]["name"]
+            try:
+                args = json.loads(tc["function"]["arguments"])
+            except Exception:
+                args = {}
+
+            icon = TOOL_ICONS.get(name, "🔧")
+            label = name.replace("_", " ").title()
+            first_val = list(args.values())[0] if args else ""
+            display = f"{first_val}" if first_val else ""
+            status_placeholder.info(f"{icon} **{label}**{' → ' + display if display else ''}...")
+            tools_used.append(f"{icon} {label}" + (f" ({display})" if display else ""))
+
+            fn = TOOL_MAP.get(name)
+            result = fn(**args) if fn else {"error": f"Unknown tool: {name}"}
+
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tc["id"],
+                "name": name,
+                "content": json.dumps(result, default=str),
+            })
+
+        time.sleep(0.5)  # small pause between tool call rounds
+
     status_placeholder.empty()
 
-    text = response["choices"][0]["message"]["content"] or ""
-
+    text = msg.get("content") or ""
     if tools_used:
-        text += "\n\n---\n*Live data fetched: " + " · ".join(tools_used) + "*"
+        unique = list(dict.fromkeys(tools_used))
+        text += "\n\n---\n*Tools used: " + " · ".join(unique) + "*"
 
     return text
 

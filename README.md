@@ -80,73 +80,86 @@ The agent proactively avoids problematic scenarios — monsoon-flooded routes, t
 
 ## 4. Tools Used
 
-### Groq API (LLM Brain — Llama 3.3 70B)
-**What:** Large language model inference via Groq's high-speed infrastructure.
-**Why:** Groq provides extremely low-latency inference for large models. Llama 3.3 70B has strong reasoning capabilities for multi-constraint planning tasks. Used as the central reasoning engine that synthesizes all tool outputs into a coherent plan.
+The agent uses **5 tools** that it calls autonomously based on the planning context. It decides which tools to use, when to use them, and in what order — without any hardcoded pipeline.
 
-### OpenWeatherMap API
-**What:** Real-time weather forecasts for any city worldwide.
-**Why:** Travel planning is fundamentally seasonal. A plan that ignores weather is unreliable. This tool provides actual 5-day forecasts that are injected into the planning context, allowing the agent to give specific, date-accurate weather guidance rather than generic seasonal advice.
+### `recall_preferences` — User Memory Recall
+**What:** Reads saved user preferences from persistent local storage.
+**Why:** Called at the start of every plan. If the user has previously mentioned their home city, budget style, dietary needs, or travel interests, the agent retrieves this and uses it to personalize the plan without asking again.
+
+### `remember_preference` — User Memory Write
+**What:** Saves a user preference (key-value) to persistent storage.
+**Why:** Called automatically when the agent detects new information about the user — travel style, budget level, home city, group composition, interests. Builds a profile over time, making every subsequent plan more accurate.
+
+### `get_weather` — Live Weather Forecasts
+**What:** Fetches real-time 5-day forecasts via OpenWeatherMap API.
+**Why:** Travel planning is fundamentally seasonal. The agent calls this for every city in the itinerary — not as an optional lookup but as a required input. Forecast data directly shapes accommodation recommendations, activity timing, and risk flags.
+
+### `search_flights` — Flight Route Intelligence
+**What:** Returns route information and fare estimates for a city pair.
+**Why:** Every flight leg in the itinerary is explicitly reasoned about. The agent calls this per leg to surface airline options, duration, and realistic INR price ranges — grounding the transport plan in bookable reality.
+
+### `search_hotels` — Hotel Area Recommendations
+**What:** Returns stay area recommendations and price ranges per city.
+**Why:** Called for every city in the itinerary matched to the user's budget level. The agent recommends neighborhoods, not just hotel names — which is more durable and actionable for actual booking.
 
 ### Budget Calculation Logic
-**What:** Structured cost estimation across transport, accommodation, food, and activities.
-**Why:** Budget is the most common constraint users have but the least often respected by generic travel tools. The agent builds itemized budget tables using category-level estimates, allowing users to see exactly where money goes and where to cut.
+**What:** Structured cost estimation across transport, accommodation, food, and activities — built into the LLM's reasoning, not a separate API.
+**Why:** Budget is the most common constraint users have. The agent builds itemized markdown tables showing per-category and total costs, and adjusts recommendations when a budget constraint is specified.
 
 ### Geography and Route Reasoning
-**What:** Built-in spatial reasoning about distances, transport options, and route sequencing.
-**Why:** India and Asia have complex, non-obvious transport networks. The agent knows that Varanasi is best reached by train from Delhi, that Meghalaya requires a connection through Guwahati, and that Bangkok to Chiang Mai has both flight and overnight train options at different price and comfort levels.
+**What:** Built-in spatial reasoning about distances, transport options, and route sequencing — part of the LLM's knowledge.
+**Why:** India and Asia have complex, non-obvious transport networks. The agent knows that Varanasi is best reached by train from Delhi, that Meghalaya requires a connection through Guwahati, and that Bangkok to Chiang Mai has flight and overnight train options at different price points.
 
 ---
 
 ## 5. How the Agent Thinks — Execution Flow
 
 ```
-User Input
+User Input: "10 days Rajasthan, December, ₹60k for 2"
     │
     ▼
-Step 1: Parse Goal
-    Extract: destination(s), duration, budget, group size, season
-    Infer: missing parameters using defaults and geography knowledge
+Step 1: LLM receives goal + system prompt
+    → Autonomously decides to call recall_preferences first
+    → Retrieves: home_city=Delhi, travel_style=mid-range (if previously saved)
 
     │
     ▼
-Step 2: Detect Cities → Fetch Live Weather
-    For each major city in the planned route:
-    → Call OpenWeatherMap API
-    → Inject forecast data into planning context
+Step 2: LLM decides route (Jaipur→Pushkar→Jodhpur→Jaisalmer→Udaipur)
+    → Autonomously calls get_weather for each city
+    → Receives live 5-day forecasts
+    → December confirmed: 8-20°C, clear skies, ideal season
 
     │
     ▼
-Step 3: Route Optimization
-    → Determine optimal city sequence (geography-aware)
-    → Select transport modes (flight / train / bus / ferry)
-    → Estimate transit times and costs
+Step 3: LLM calls search_flights for each flight leg
+    → DEL→JAI, UDR→DEL
+    → Receives route info and fare estimates
 
     │
     ▼
-Step 4: Accommodation Planning
-    → Identify best stay areas per city (not just hotel names)
-    → Match to budget level
-    → Flag peak season surcharges or booking lead times
+Step 4: LLM calls search_hotels for each city
+    → Matches to mid-range budget level
+    → Receives area recommendations and nightly price ranges
 
     │
     ▼
-Step 5: Budget Assembly
-    → Sum transport + stays + food + activities
-    → Compare against stated budget
-    → Flag overruns, suggest optimizations
+Step 5: LLM detects "mid-range" preference → calls remember_preference
+    → Saves: budget_level=mid-range for future trips
 
     │
     ▼
-Step 6: Visa & Entry Check
-    → Identify nationalities and destination entry rules
-    → Include visa type, cost, processing time, application method
+Step 6: LLM has all data — produces structured plan
+    → Assembles 9-section output grounded in tool results
+    → Budget table using actual hotel/transport estimates
+    → Weather section using live forecast data
+    → Visa section (e-Tourist Visa if international)
 
     │
     ▼
-Step 7: Output Structured Plan
+Output: Complete, executable travel plan
     Sections: Assumptions · Itinerary · Transport · Hotels ·
-              Budget · Weather · Visa · Practical Tips
+              Budget · Weather · Visa & Entry · Practical Tips
+    Footer: Tools used listed with call details
 ```
 
 ---
@@ -226,36 +239,44 @@ Every response includes:
                          │
                          ▼
 ┌─────────────────────────────────────────────────────────┐
-│                  Pre-Processing Layer                    │
-│   City detection → Weather API calls → Context assembly │
+│                    LLM Reasoning Engine                  │
+│         Groq API — Llama 3.3 70B Versatile              │
+│                                                          │
+│  System Prompt: Autonomous travel agent persona,         │
+│  decision rules, output format, formatting constraints   │
 └────────────────────────┬────────────────────────────────┘
                          │
                          ▼
 ┌─────────────────────────────────────────────────────────┐
-│                    LLM Reasoning Engine                  │
-│         Groq API — Llama 3.3 70B Versatile              │
+│              TRUE Agentic Tool Loop                      │
+│   LLM autonomously decides which tools to call           │
 │                                                          │
-│  System Prompt: Autonomous travel agent persona          │
-│  + travel planning rules + output format specification  │
-│  + injected live weather data                           │
+│   recall_preferences → get_weather (per city)            │
+│   → search_flights (per leg) → search_hotels (per city) │
+│   → remember_preference (if new info detected)           │
+│                                                          │
+│   Loop repeats until LLM signals completion              │
 └────────────────────────┬────────────────────────────────┘
                          │
                          ▼
 ┌─────────────────────────────────────────────────────────┐
 │                  Structured Output                       │
-│   8-section markdown plan rendered in Streamlit chat     │
+│   9-section markdown plan rendered in Streamlit chat     │
 └─────────────────────────────────────────────────────────┘
 
-External APIs:
-  OpenWeatherMap ──► Weather forecasts (5-day, per city)
+External APIs & Storage:
+  OpenWeatherMap  ──► Live 5-day forecasts per city
   Groq API        ──► LLM inference (low latency)
+  user_memory.json ─► Persistent user preferences (local)
 ```
 
 **Key design decisions:**
-- Weather is fetched **before** the LLM call and injected as context — this grounds the plan in real data without requiring complex tool-calling loops
-- The system prompt encodes the agent's persona, decision philosophy, output format, and formatting constraints
+- The LLM **autonomously decides** which tools to call, in what order, and how many times — this is a true agentic loop, not a hardcoded pipeline
+- `recall_preferences` is called at the start of every plan — the agent personalizes every response based on what it has learned about the user
+- `remember_preference` is called automatically when the user mentions travel style, budget level, home city, dietary needs, or group size
+- Memory persists across sessions in `user_memory.json` — the agent gets smarter with each interaction
 - All API calls use `verify=False` to handle corporate SSL proxy environments
-- Retry logic handles Groq's rate limits automatically
+- Retry logic with `retry-after` header handling manages Groq rate limits automatically
 
 ---
 
@@ -286,9 +307,26 @@ A chatbot is a reactive system. This agent is a proactive planning system that t
 |---|---|
 | Frontend | Streamlit |
 | LLM | Llama 3.3 70B via Groq API |
-| Weather | OpenWeatherMap API |
+| Agent Loop | Groq native function calling — LLM drives tool selection |
+| Weather | OpenWeatherMap API (live 5-day forecasts) |
+| Memory | JSON file — persistent user preference store |
 | Language | Python 3.11+ |
 | Deployment | Render (Web Service) |
+
+---
+
+## Agent Capabilities — Updated Status
+
+| Capability | Status |
+|---|---|
+| Autonomous planning (no questions) | ✅ |
+| Assumption-based decision making | ✅ |
+| Multi-constraint optimization | ✅ |
+| Live weather per city | ✅ |
+| LLM-directed tool selection | ✅ |
+| Dynamic multi-turn tool loop | ✅ |
+| Persistent user memory across sessions | ✅ |
+| Real flight/hotel data | 🟡 Knowledge-based estimates |
 
 ---
 
