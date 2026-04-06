@@ -8,7 +8,7 @@ load_dotenv(override=True)
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="AI Travel Agent — India & Asia",
+    page_title="AI Travel Agent — Plan Any Trip, Anywhere",
     page_icon="✈️",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -311,7 +311,7 @@ hr { border-color: rgba(255,255,255,0.08) !important; }
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODEL = "llama-3.3-70b-versatile"
 
-SYSTEM_PROMPT = """You are a fully autonomous personal travel agent for India and Asian countries.
+SYSTEM_PROMPT = """You are a fully autonomous personal travel agent covering every destination worldwide.
 
 You are NOT a conversational chatbot. You are an action-oriented planning agent that independently creates complete, practical, real-world travel plans without asking follow-up questions.
 
@@ -327,7 +327,7 @@ Operating mode:
 - Make reasonable assumptions, state them once, then proceed
 - If a tool returns an error, fall back to your knowledge and note it
 
-Geographic scope: India, South Asia, Southeast Asia, East Asia, Central Asia
+Geographic scope: Worldwide — every country and continent
 
 Output format — always use ALL these sections with markdown:
 ## Assumptions
@@ -715,7 +715,7 @@ st.markdown(f"""
       <span class="plane-icon">✈️</span>
       <span class="title-text"> AI Travel Agent</span>
     </div>
-    <div class="hero-sub" style="animation:titleFadeIn 0.6s ease-out 0.8s both;display:block;">India & Asia &nbsp;·&nbsp; Fully Autonomous &nbsp;·&nbsp; No Follow-up Questions</div>
+    <div class="hero-sub" style="animation:titleFadeIn 0.6s ease-out 0.8s both;display:block;">Worldwide &nbsp;·&nbsp; Fully Autonomous &nbsp;·&nbsp; No Follow-up Questions</div>
     <div class="hero-badges" style="animation:titleFadeIn 0.6s ease-out 1s both;">
       <span class="badge">📅 Day-by-day itinerary</span>
       <span class="badge">🌤️ Live weather</span>
@@ -738,14 +738,17 @@ chat_col, prompt_col = st.columns([2.8, 1], gap="large")
 
 examples = [
     ("🏰", "10 days Rajasthan, December, ₹60k for 2"),
+    ("🗼", "Paris + Swiss Alps, 10 days, couple, mid-range"),
     ("🌏", "Solo Vietnam + Cambodia, 2 weeks, mid-range"),
-    ("🌴", "Kerala family trip, April, 4 people"),
+    ("🗽", "New York + Boston + Washington DC, 10 days"),
     ("🌸", "Japan cherry blossom, first timer, 12 days"),
-    ("🏔️", "Northeast India — Meghalaya + Arunachal, 10 days"),
-    ("🐘", "Bangkok + Chiang Mai, 7 days, budget"),
+    ("🦁", "Kenya + Tanzania safari, 10 days, luxury"),
     ("🌺", "Bali honeymoon, 8 days, luxury"),
-    ("🕌", "Uzbekistan Silk Road, 10 days"),
+    ("🏔️", "Machu Picchu + Patagonia, 14 days, adventure"),
+    ("🕌", "Morocco — Marrakech + Sahara + Fes, 10 days"),
+    ("🐨", "Australia East Coast, 3 weeks, backpacker"),
     ("🎎", "Seoul + Busan, 8 days, K-culture"),
+    ("🌴", "Maldives + Sri Lanka, 10 days, luxury"),
 ]
 
 # ── RIGHT COLUMN — Example prompts ───────────────────────────────────────────

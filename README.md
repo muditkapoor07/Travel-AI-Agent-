@@ -1,6 +1,6 @@
-# ✈️ AI Travel Agent — India & Asia
+# ✈️ AI Travel Agent — Plan Any Trip, Anywhere
 
-> A fully autonomous, agentic travel planning system that creates complete, executable travel plans without asking follow-up questions.
+> A fully autonomous, agentic travel planning system that creates complete, executable travel plans for any destination worldwide — without asking follow-up questions.
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.32+-red.svg)](https://streamlit.io)
@@ -12,10 +12,10 @@
 ## 1. Project Overview
 
 ### What It Is
-The AI Travel Agent is an autonomous planning agent built for India and Asian countries. Given a vague or detailed travel request, it independently produces a complete, structured, ready-to-book travel plan — including day-by-day itinerary, transport, hotels, budget, weather, visa requirements, and practical tips.
+The AI Travel Agent is an autonomous planning agent covering every destination worldwide. Given a vague or detailed travel request, it independently produces a complete, structured, ready-to-book travel plan — including day-by-day itinerary, transport, hotels, budget, weather, visa requirements, and practical tips.
 
 ### The Problem It Solves
-Planning a trip across India or Asia requires synthesizing dozens of variables simultaneously: weather seasonality, route efficiency, transport options, local ground realities, visa rules, budget trade-offs, and festival calendars. Most travelers either spend hours researching across multiple sources or rely on generic itinerary templates that ignore real constraints.
+Planning any trip requires synthesizing dozens of variables simultaneously: weather seasonality, route efficiency, transport options, local ground realities, visa rules, budget trade-offs, and festival calendars. Most travelers either spend hours researching across multiple sources or rely on generic itinerary templates that ignore real constraints.
 
 This agent replaces that entire process with a single natural language input.
 
