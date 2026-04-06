@@ -459,21 +459,35 @@ def search_hotels(city: str, budget_level: str = "mid-range", nights: int = 2) -
     }
 
 
-# ── Memory tools ──────────────────────────────────────────────────────────────
-MEMORY_FILE = os.path.join(os.path.dirname(__file__), "user_memory.json")
+# ── Memory tools — Neon PostgreSQL ────────────────────────────────────────────
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
-def _load_memory() -> dict:
-    if os.path.exists(MEMORY_FILE):
-        try:
-            with open(MEMORY_FILE, "r") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {"preferences": {}, "history": []}
+def _get_db():
+    return psycopg2.connect(
+        os.getenv("DATABASE_URL", "postgresql://neondb_owner:npg_k1TlFyVsHz5o@ep-raspy-credit-anqhzo5x.c-6.us-east-1.aws.neon.tech/neondb?sslmode=require")
+    )
 
-def _save_memory(data: dict):
-    with open(MEMORY_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+def _init_db():
+    """Create preferences table if it doesn't exist."""
+    try:
+        conn = _get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_preferences (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception:
+        pass
+
+# Init table on startup
+_init_db()
 
 def remember_preference(key: str, value: str) -> dict:
     """Save a user preference or fact for future trips.
@@ -481,15 +495,36 @@ def remember_preference(key: str, value: str) -> dict:
         key: Category e.g. 'travel_style', 'budget_level', 'home_city', 'dietary', 'interests'
         value: The value e.g. 'mid-range', 'Delhi', 'vegetarian', 'adventure travel'
     """
-    mem = _load_memory()
-    mem["preferences"][key] = value
-    _save_memory(mem)
-    return {"saved": True, "key": key, "value": value}
+    try:
+        conn = _get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO user_preferences (key, value, updated_at)
+            VALUES (%s, %s, NOW())
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+        """, (key, value))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {"saved": True, "key": key, "value": value}
+    except Exception as e:
+        return {"saved": False, "error": str(e)}
 
 def recall_preferences() -> dict:
     """Recall all saved user preferences to personalize the travel plan."""
-    mem = _load_memory()
-    return {"preferences": mem["preferences"]} if mem["preferences"] else {"preferences": {}, "note": "No preferences saved yet"}
+    try:
+        conn = _get_db()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("SELECT key, value FROM user_preferences ORDER BY updated_at DESC")
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        if rows:
+            prefs = {r["key"]: r["value"] for r in rows}
+            return {"preferences": prefs}
+        return {"preferences": {}, "note": "No preferences saved yet"}
+    except Exception as e:
+        return {"preferences": {}, "error": str(e)}
 
 TOOL_MAP = {
     "get_weather": get_weather,
